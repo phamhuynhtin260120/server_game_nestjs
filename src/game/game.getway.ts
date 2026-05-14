@@ -48,7 +48,7 @@ export class GameGateway implements OnGatewayConnection, OnGatewayDisconnect {
 
         let data = payload;
 
-        // GIẢNG VIÊN: Nếu data gửi lên là chuỗi, ta phải parse nó ra
+        //  Nếu data gửi lên là chuỗi, ta phải parse nó ra
         if (typeof payload === 'string') {
             try {
                 data = JSON.parse(payload);
@@ -89,6 +89,8 @@ export class GameGateway implements OnGatewayConnection, OnGatewayDisconnect {
             y: 250
         },
     };
+    console.log('Danh sách người chơi:', this.players);
+    console.log('Người chơi đã tham gia ở vị trí:', newPlayer.position);
     this.players.set(client.id, newPlayer);
     console.log(`🎮 Người chơi [${playerName}] đã tham gia trận đấu!`);
 }
