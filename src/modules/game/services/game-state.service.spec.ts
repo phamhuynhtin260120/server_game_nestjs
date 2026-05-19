@@ -1,5 +1,6 @@
 import {
   DEFAULT_PLAYER_HP,
+  DEFAULT_ROOM_ID,
   MAP_LIMIT_X,
   MAP_LIMIT_Y,
   MAX_PLAYER_NAME_LENGTH,
@@ -83,6 +84,7 @@ describe('GameStateService', () => {
 
     const snapshot = service.createWorldSnapshot();
 
+    expect(snapshot.roomId).toBe(DEFAULT_ROOM_ID);
     expect(snapshot.tick).toBe(1);
     expect(snapshot.players).toEqual([
       {
@@ -97,5 +99,63 @@ describe('GameStateService', () => {
       },
     ]);
     expect(snapshot.players[0]).not.toHaveProperty('joinedAt');
+  });
+
+  it('moves players between rooms', () => {
+    service.addPlayer('socket-1', 'Zen');
+
+    const player = service.joinRoom('socket-1', {
+      roomId: 'arena-1',
+      name: 'Zen',
+    });
+
+    expect(player.name).toBe('Zen');
+    expect(service.getPlayerRoomId('socket-1')).toBe('arena-1');
+    expect(service.getRoom(DEFAULT_ROOM_ID)?.players.size).toBe(0);
+    expect(service.getRoom('arena-1')?.players.has('socket-1')).toBe(true);
+  });
+
+  it('creates isolated world snapshots per room', () => {
+    service.addPlayer('socket-1', 'Zen', 'arena-1');
+    service.addPlayer('socket-2', 'Kai', 'arena-2');
+    service.movePlayer('socket-1', { direction: 'right' });
+
+    const arenaOneSnapshot = service.createWorldSnapshot('arena-1');
+    const arenaTwoSnapshot = service.createWorldSnapshot('arena-2');
+
+    expect(arenaOneSnapshot).toEqual({
+      roomId: 'arena-1',
+      tick: 1,
+      players: [
+        {
+          id: 'socket-1',
+          name: 'Zen',
+          position: {
+            x: MAP_LIMIT_X / 2 + PLAYER_MOVE_SPEED,
+            y: MAP_LIMIT_Y / 2,
+          },
+          hp: DEFAULT_PLAYER_HP,
+          status: 'alive',
+        },
+      ],
+    });
+    expect(arenaTwoSnapshot.players).toEqual([
+      {
+        id: 'socket-2',
+        name: 'Kai',
+        position: {
+          x: MAP_LIMIT_X / 2,
+          y: MAP_LIMIT_Y / 2,
+        },
+        hp: DEFAULT_PLAYER_HP,
+        status: 'alive',
+      },
+    ]);
+  });
+
+  it('normalizes invalid room ids to lobby', () => {
+    service.addPlayer('socket-1', 'Zen', '   !!!   ');
+
+    expect(service.getPlayerRoomId('socket-1')).toBe(DEFAULT_ROOM_ID);
   });
 });

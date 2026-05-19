@@ -1,25 +1,31 @@
 import { Injectable } from '@nestjs/common';
 import {
   DEFAULT_PLAYER_HP,
+  DEFAULT_ROOM_ID,
   MAP_LIMIT_X,
   MAP_LIMIT_Y,
   MAX_PLAYER_NAME_LENGTH,
+  MAX_ROOM_ID_LENGTH,
   PLAYER_MOVE_SPEED,
 } from '../constants/game.constants';
+import { JoinRoomDto } from '../dto/join-room.dto';
 import { MoveDirection, MoveInputDto } from '../dto/move-input.dto';
 import { Player, PlayerSnapshot } from '../models/player.model';
+import { GameRoom } from '../models/room.model';
 
 export interface WorldSnapshot {
+  roomId: string;
   tick: number;
   players: PlayerSnapshot[];
 }
 
 @Injectable()
 export class GameStateService {
-  private readonly players: Map<string, Player> = new Map();
-  private tickCount = 0;
+  private readonly rooms: Map<string, GameRoom> = new Map();
+  private readonly playerRoomIds: Map<string, string> = new Map();
 
-  addPlayer(id: string, name: string): Player {
+  addPlayer(id: string, name: string, roomId = DEFAULT_ROOM_ID): Player {
+    const room = this.getOrCreateRoom(roomId);
     const newPlayer: Player = {
       id,
       name: this.normalizePlayerName(name, id),
@@ -32,17 +38,39 @@ export class GameStateService {
       joinedAt: Date.now(),
     };
 
-    this.players.set(id, newPlayer);
+    this.removePlayer(id);
+    room.players.set(id, newPlayer);
+    this.playerRoomIds.set(id, room.id);
 
     return newPlayer;
   }
 
+  joinRoom(id: string, input: JoinRoomDto): Player {
+    return this.addPlayer(
+      id,
+      input.name ?? this.getPlayer(id)?.name ?? '',
+      input.roomId,
+    );
+  }
+
   removePlayer(id: string): void {
-    this.players.delete(id);
+    const roomId = this.playerRoomIds.get(id);
+
+    if (!roomId) {
+      return;
+    }
+
+    const room = this.rooms.get(roomId);
+    room?.players.delete(id);
+    this.playerRoomIds.delete(id);
+
+    if (room && room.players.size === 0 && room.id !== DEFAULT_ROOM_ID) {
+      this.rooms.delete(room.id);
+    }
   }
 
   movePlayer(id: string, input: MoveInputDto): Player | undefined {
-    const player = this.players.get(id);
+    const player = this.getPlayer(id);
 
     if (!player) {
       return undefined;
@@ -66,24 +94,77 @@ export class GameStateService {
     player.position.x = this.clamp(player.position.x, 0, MAP_LIMIT_X);
     player.position.y = this.clamp(player.position.y, 0, MAP_LIMIT_Y);
 
-    this.players.set(id, player);
-
     return player;
   }
 
-  createWorldSnapshot(): WorldSnapshot {
-    this.tickCount++;
+  createWorldSnapshots(): WorldSnapshot[] {
+    return Array.from(this.rooms.values()).map((room) =>
+      this.createWorldSnapshot(room.id),
+    );
+  }
+
+  createWorldSnapshot(roomId = DEFAULT_ROOM_ID): WorldSnapshot {
+    const room = this.getOrCreateRoom(roomId);
+    room.tick++;
 
     return {
-      tick: this.tickCount,
-      players: Array.from(this.players.values()).map((player) =>
+      roomId: room.id,
+      tick: room.tick,
+      players: Array.from(room.players.values()).map((player) =>
         this.toPlayerSnapshot(player),
       ),
     };
   }
 
   getPlayer(id: string): Player | undefined {
-    return this.players.get(id);
+    const roomId = this.playerRoomIds.get(id);
+
+    if (!roomId) {
+      return undefined;
+    }
+
+    return this.rooms.get(roomId)?.players.get(id);
+  }
+
+  getPlayerRoomId(id: string): string | undefined {
+    return this.playerRoomIds.get(id);
+  }
+
+  getRoom(roomId: string): GameRoom | undefined {
+    return this.rooms.get(roomId);
+  }
+
+  normalizeRoomId(roomId: string | undefined): string {
+    const normalizedRoomId = roomId
+      ?.trim()
+      .slice(0, MAX_ROOM_ID_LENGTH)
+      .replace(/[^a-zA-Z0-9_-]/g, '');
+
+    if (normalizedRoomId && normalizedRoomId.length > 0) {
+      return normalizedRoomId;
+    }
+
+    return DEFAULT_ROOM_ID;
+  }
+
+  private getOrCreateRoom(roomId: string | undefined): GameRoom {
+    const normalizedRoomId = this.normalizeRoomId(roomId);
+    const existingRoom = this.rooms.get(normalizedRoomId);
+
+    if (existingRoom) {
+      return existingRoom;
+    }
+
+    const newRoom: GameRoom = {
+      id: normalizedRoomId,
+      players: new Map(),
+      tick: 0,
+      createdAt: Date.now(),
+    };
+
+    this.rooms.set(newRoom.id, newRoom);
+
+    return newRoom;
   }
 
   private toPlayerSnapshot(player: Player): PlayerSnapshot {
