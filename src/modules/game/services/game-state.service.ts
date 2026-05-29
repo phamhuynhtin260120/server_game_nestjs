@@ -2,8 +2,11 @@ import { Injectable } from '@nestjs/common';
 import {
   DEFAULT_PLAYER_HP,
   DEFAULT_ROOM_ID,
-  MAP_LIMIT_X,
-  MAP_LIMIT_Y,
+  DEFAULT_SPAWN_POINTS,
+  MAP_MAX_X,
+  MAP_MAX_Y,
+  MAP_MIN_X,
+  MAP_MIN_Y,
   MAX_PLAYER_NAME_LENGTH,
   MAX_ROOM_ID_LENGTH,
   PLAYER_MOVE_SPEED,
@@ -12,11 +15,14 @@ import { JoinRoomDto } from '../dto/join-room.dto';
 import { MoveDirection, MoveInputDto } from '../dto/move-input.dto';
 import { Player, PlayerSnapshot } from '../models/player.model';
 import { GameRoom } from '../models/room.model';
+import { SpawnPoint } from '../models/spawn-point.model';
+import { Vector2 } from '../models/vector.model';
 
 export interface WorldSnapshot {
   roomId: string;
   tick: number;
   players: PlayerSnapshot[];
+  spawnPoints: SpawnPoint[];
 }
 
 @Injectable()
@@ -25,20 +31,20 @@ export class GameStateService {
   private readonly playerRoomIds: Map<string, string> = new Map();
 
   addPlayer(id: string, name: string, roomId = DEFAULT_ROOM_ID): Player {
-    const room = this.getOrCreateRoom(roomId);
+    const normalizedRoomId = this.normalizeRoomId(roomId);
+
+    this.removePlayer(id);
+
+    const room = this.getOrCreateRoom(normalizedRoomId);
     const newPlayer: Player = {
       id,
       name: this.normalizePlayerName(name, id),
-      position: {
-        x: MAP_LIMIT_X / 2,
-        y: MAP_LIMIT_Y / 2,
-      },
+      position: this.pickSpawnPosition(room),
       hp: DEFAULT_PLAYER_HP,
       status: 'alive',
       joinedAt: Date.now(),
     };
 
-    this.removePlayer(id);
     room.players.set(id, newPlayer);
     this.playerRoomIds.set(id, room.id);
 
@@ -86,13 +92,13 @@ export class GameStateService {
       return player;
     }
 
-    if (direction === 'up') player.position.y -= PLAYER_MOVE_SPEED;
-    else if (direction === 'down') player.position.y += PLAYER_MOVE_SPEED;
+    if (direction === 'up') player.position.y += PLAYER_MOVE_SPEED;
+    else if (direction === 'down') player.position.y -= PLAYER_MOVE_SPEED;
     else if (direction === 'left') player.position.x -= PLAYER_MOVE_SPEED;
     else if (direction === 'right') player.position.x += PLAYER_MOVE_SPEED;
 
-    player.position.x = this.clamp(player.position.x, 0, MAP_LIMIT_X);
-    player.position.y = this.clamp(player.position.y, 0, MAP_LIMIT_Y);
+    player.position.x = this.clamp(player.position.x, MAP_MIN_X, MAP_MAX_X);
+    player.position.y = this.clamp(player.position.y, MAP_MIN_Y, MAP_MAX_Y);
 
     return player;
   }
@@ -113,6 +119,7 @@ export class GameStateService {
       players: Array.from(room.players.values()).map((player) =>
         this.toPlayerSnapshot(player),
       ),
+      spawnPoints: this.getSpawnPoints(),
     };
   }
 
@@ -159,12 +166,29 @@ export class GameStateService {
       id: normalizedRoomId,
       players: new Map(),
       tick: 0,
+      spawnCursor: 0,
       createdAt: Date.now(),
     };
 
     this.rooms.set(newRoom.id, newRoom);
 
     return newRoom;
+  }
+
+  private pickSpawnPosition(room: GameRoom): Vector2 {
+    const spawnPoints = this.getSpawnPoints();
+    const spawnPoint = spawnPoints[room.spawnCursor % spawnPoints.length];
+
+    room.spawnCursor++;
+
+    return { ...spawnPoint.position };
+  }
+
+  private getSpawnPoints(): SpawnPoint[] {
+    return DEFAULT_SPAWN_POINTS.map((spawnPoint) => ({
+      id: spawnPoint.id,
+      position: { ...spawnPoint.position },
+    }));
   }
 
   private toPlayerSnapshot(player: Player): PlayerSnapshot {
