@@ -1,98 +1,291 @@
-<p align="center">
-  <a href="http://nestjs.com/" target="blank"><img src="https://nestjs.com/img/logo-small.svg" width="120" alt="Nest Logo" /></a>
-</p>
+# Server Game NestJS
 
-[circleci-image]: https://img.shields.io/circleci/build/github/nestjs/nest/master?token=abc123def456
-[circleci-url]: https://circleci.com/gh/nestjs/nest
+Backend realtime game server duoc xay dung bang NestJS, TypeScript va Socket.IO.
 
-  <p align="center">A progressive <a href="http://nodejs.org" target="_blank">Node.js</a> framework for building efficient and scalable server-side applications.</p>
-    <p align="center">
-<a href="https://www.npmjs.com/~nestjscore" target="_blank"><img src="https://img.shields.io/npm/v/@nestjs/core.svg" alt="NPM Version" /></a>
-<a href="https://www.npmjs.com/~nestjscore" target="_blank"><img src="https://img.shields.io/npm/l/@nestjs/core.svg" alt="Package License" /></a>
-<a href="https://www.npmjs.com/~nestjscore" target="_blank"><img src="https://img.shields.io/npm/dm/@nestjs/common.svg" alt="NPM Downloads" /></a>
-<a href="https://circleci.com/gh/nestjs/nest" target="_blank"><img src="https://img.shields.io/circleci/build/github/nestjs/nest/master" alt="CircleCI" /></a>
-<a href="https://discord.gg/G7Qnnhy" target="_blank"><img src="https://img.shields.io/badge/discord-online-brightgreen.svg" alt="Discord"/></a>
-<a href="https://opencollective.com/nest#backer" target="_blank"><img src="https://opencollective.com/nest/backers/badge.svg" alt="Backers on Open Collective" /></a>
-<a href="https://opencollective.com/nest#sponsor" target="_blank"><img src="https://opencollective.com/nest/sponsors/badge.svg" alt="Sponsors on Open Collective" /></a>
-  <a href="https://paypal.me/kamilmysliwiec" target="_blank"><img src="https://img.shields.io/badge/Donate-PayPal-ff3f59.svg" alt="Donate us"/></a>
-    <a href="https://opencollective.com/nest#sponsor"  target="_blank"><img src="https://img.shields.io/badge/Support%20us-Open%20Collective-41B883.svg" alt="Support us"></a>
-  <a href="https://twitter.com/nestframework" target="_blank"><img src="https://img.shields.io/twitter/follow/nestframework.svg?style=social&label=Follow" alt="Follow us on Twitter"></a>
-</p>
-  <!--[![Backers on Open Collective](https://opencollective.com/nest/backers/badge.svg)](https://opencollective.com/nest#backer)
-  [![Sponsors on Open Collective](https://opencollective.com/nest/sponsors/badge.svg)](https://opencollective.com/nest#sponsor)-->
+Du an hien tai tap trung vao phan loi cua mot multiplayer game server: nguoi choi ket noi vao room, server luu game state trong memory, xu ly lenh di chuyen va broadcast world state theo game tick.
 
-## Description
+## Cong nghe chinh
 
-[Nest](https://github.com/nestjs/nest) framework TypeScript starter repository.
+- NestJS 11: framework backend Node.js theo kien truc module/service/gateway.
+- TypeScript: ngon ngu chinh, giup mo ta type cho player, room, DTO va game state.
+- Socket.IO: giao tiep realtime giua client va server.
+- Nest Schedule: chay game tick dinh ky moi `50ms`.
+- Jest: unit test cho service va controller.
+- Docker: build va chay server bang container.
+- PostgreSQL: da co cau hinh Docker Compose va `DATABASE_URL`, hien tai chua duoc su dung trong game state.
 
-## Project setup
+## Tinh nang hien co
 
-```bash
-$ npm install
+- Client ket noi vao game server bang Socket.IO.
+- Tu dong tao player khi client connect.
+- Ho tro room rieng qua `roomId`.
+- Ho tro event `joinRoom` de chuyen room.
+- Ho tro event `move` voi cac huong `up`, `down`, `left`, `right`.
+- Server gioi han vi tri player trong map.
+- Server spawn player theo danh sach spawn point mac dinh.
+- Server broadcast `worldUpdate` theo tung room moi `50ms`.
+- Co event `ping`/`pong` de test ket noi realtime.
+- Co unit test cho `GameStateService`.
+
+## Cau truc thu muc
+
+```text
+src/
+├── core/          # App-wide infrastructure: auth, config, redis, mail, database providers
+├── common/        # Generic reusable utilities: pipes, decorators, filters, types
+├── integrations/  # External/internal service wrappers: Stripe, AWS, Firebase, APIs
+├── modules/       # Domain-driven modules
+│   └── game/      # Realtime game module
+├── events/        # Domain event publishers/listeners
+├── commands/      # CLI jobs, CRON logic, workers, maintenance tasks
+├── app.module.ts  # Root NestJS module
+└── main.ts        # Application bootstrap
 ```
 
-## Compile and run the project
+## Game module
 
-```bash
-# development
-$ npm run start
-
-# watch mode
-$ npm run start:dev
-
-# production mode
-$ npm run start:prod
+```text
+src/modules/game/
+├── constants/
+│   └── game.constants.ts
+├── dto/
+│   ├── join-room.dto.ts
+│   └── move-input.dto.ts
+├── gateways/
+│   └── game.gateway.ts
+├── models/
+│   ├── player.model.ts
+│   ├── room.model.ts
+│   ├── spawn-point.model.ts
+│   └── vector.model.ts
+├── services/
+│   ├── game-state.service.ts
+│   └── game-state.service.spec.ts
+└── game.module.ts
 ```
 
-## Run tests
+### `GameGateway`
 
-```bash
-# unit tests
-$ npm run test
+`GameGateway` la lop giao tiep realtime voi client. Lop nay lang nghe Socket.IO events, goi `GameStateService` de xu ly logic va emit ket qua ve client.
 
-# e2e tests
-$ npm run test:e2e
+Nhiem vu chinh:
 
-# test coverage
-$ npm run test:cov
+- Xu ly client connect/disconnect.
+- Cho player join Socket.IO room.
+- Nhan event `joinRoom`.
+- Nhan event `move`.
+- Broadcast `worldUpdate` moi game tick.
+- Phan hoi `ping` bang `pong`.
+
+### `GameStateService`
+
+`GameStateService` la lop quan ly game state trong memory.
+
+Nhiem vu chinh:
+
+- Luu danh sach room bang `Map<string, GameRoom>`.
+- Luu player dang o room nao bang `Map<string, string>`.
+- Tao player moi khi client connect.
+- Xoa player khi client disconnect.
+- Chuyen player giua cac room.
+- Di chuyen player theo direction.
+- Clamp vi tri player trong map.
+- Tao world snapshot de gateway gui ve client.
+- Quan ly spawn point va spawn cursor cua tung room.
+
+## Socket.IO events
+
+### Client -> Server
+
+#### `joinRoom`
+
+Cho player vao room moi hoac cap nhat ten player.
+
+```json
+{
+  "roomId": "arena-1",
+  "name": "PlayerName"
+}
 ```
 
-## Deployment
+Server se emit lai `roomJoined` cho client vua join.
 
-When you're ready to deploy your NestJS application to production, there are some key steps you can take to ensure it runs as efficiently as possible. Check out the [deployment documentation](https://docs.nestjs.com/deployment) for more information.
+#### `move`
 
-If you are looking for a cloud-based platform to deploy your NestJS application, check out [Mau](https://mau.nestjs.com), our official platform for deploying NestJS applications on AWS. Mau makes deployment straightforward and fast, requiring just a few simple steps:
+Di chuyen player.
 
-```bash
-$ npm install -g @nestjs/mau
-$ mau deploy
+```json
+{
+  "direction": "right"
+}
 ```
 
-With Mau, you can deploy your application in just a few clicks, allowing you to focus on building features rather than managing infrastructure.
+Gia tri hop le cua `direction`:
 
-## Resources
+- `up`
+- `down`
+- `left`
+- `right`
 
-Check out a few resources that may come in handy when working with NestJS:
+#### `ping`
 
-- Visit the [NestJS Documentation](https://docs.nestjs.com) to learn more about the framework.
-- For questions and support, please visit our [Discord channel](https://discord.gg/G7Qnnhy).
-- To dive deeper and get more hands-on experience, check out our official video [courses](https://courses.nestjs.com/).
-- Deploy your application to AWS with the help of [NestJS Mau](https://mau.nestjs.com) in just a few clicks.
-- Visualize your application graph and interact with the NestJS application in real-time using [NestJS Devtools](https://devtools.nestjs.com).
-- Need help with your project (part-time to full-time)? Check out our official [enterprise support](https://enterprise.nestjs.com).
-- To stay in the loop and get updates, follow us on [X](https://x.com/nestframework) and [LinkedIn](https://linkedin.com/company/nestjs).
-- Looking for a job, or have a job to offer? Check out our official [Jobs board](https://jobs.nestjs.com).
+Dung de test ket noi.
 
-## Support
+```json
+{
+  "message": "hello"
+}
+```
 
-Nest is an MIT-licensed open source project. It can grow thanks to the sponsors and support by the amazing backers. If you'd like to join them, please [read more here](https://docs.nestjs.com/support).
+### Server -> Client
 
-## Stay in touch
+#### `roomJoined`
 
-- Author - [Kamil Myśliwiec](https://twitter.com/kammysliwiec)
-- Website - [https://nestjs.com](https://nestjs.com/)
-- Twitter - [@nestframework](https://twitter.com/nestframework)
+Tra ve sau khi player join room thanh cong.
 
-## License
+```json
+{
+  "roomId": "arena-1",
+  "player": {
+    "id": "socket-id",
+    "name": "PlayerName",
+    "position": { "x": 40, "y": -40 },
+    "hp": 100,
+    "status": "alive",
+    "joinedAt": 1710000000000
+  }
+}
+```
 
-Nest is [MIT licensed](https://github.com/nestjs/nest/blob/master/LICENSE).
+#### `worldUpdate`
+
+Duoc server broadcast moi `50ms` cho tung room.
+
+```json
+{
+  "roomId": "arena-1",
+  "tick": 1,
+  "players": [
+    {
+      "id": "socket-id",
+      "name": "PlayerName",
+      "position": { "x": 41, "y": -40 },
+      "hp": 100,
+      "status": "alive"
+    }
+  ],
+  "spawnPoints": [
+    { "id": "spawn-1", "position": { "x": 40, "y": -40 } }
+  ]
+}
+```
+
+#### `pong`
+
+Tra ve khi client gui `ping`.
+
+```json
+{
+  "serverTime": 1710000000000
+}
+```
+
+## Game constants
+
+Gia tri cau hinh hien tai nam trong `src/modules/game/constants/game.constants.ts`.
+
+- Game tick: `50ms`
+- Map X: tu `-50` den `80`
+- Map Y: tu `-50` den `50`
+- Move speed: `1`
+- Default HP: `100`
+- Default room: `lobby`
+- Max player name length: `20`
+- Max room id length: `40`
+
+## Cai dat
+
+```bash
+npm install
+```
+
+## Chay local
+
+```bash
+npm run start:dev
+```
+
+Server mac dinh chay tai:
+
+```text
+http://localhost:3000
+```
+
+Co the doi port bang bien moi truong:
+
+```bash
+PORT=4000 npm run start:dev
+```
+
+## Chay bang Docker
+
+Build image:
+
+```bash
+npm run docker:build
+```
+
+Chay server va PostgreSQL:
+
+```bash
+npm run docker:up
+```
+
+Dung container:
+
+```bash
+npm run docker:down
+```
+
+Docker Compose se chay:
+
+- Game server tai port `3000`
+- PostgreSQL expose ra may host tai port `5433`
+
+## Test
+
+Chay unit test:
+
+```bash
+npm test
+```
+
+Chay test coverage:
+
+```bash
+npm run test:cov
+```
+
+Chay build:
+
+```bash
+npm run build
+```
+
+## Design patterns dang ap dung
+
+- Modular Architecture: game logic nam trong `GameModule`.
+- Service Layer: `GameStateService` xu ly business logic, gateway chi xu ly realtime transport.
+- DTO Pattern: `JoinRoomDto` va `MoveInputDto` mo ta input tu client.
+- Model Pattern: `Player`, `GameRoom`, `Vector2`, `SpawnPoint` mo ta domain data.
+- Constants Pattern: event names va game settings duoc gom vao mot file rieng.
+- Dependency Injection: NestJS inject `GameStateService` vao `GameGateway`.
+
+## Huong phat trien tiep theo
+
+- Them validation cho DTO.
+- Them authentication cho player.
+- Luu player/room/match vao database.
+- Them Redis adapter cho Socket.IO neu chay nhieu server instance.
+- Them combat, collision, item, leaderboard hoac matchmaking.
+- Tach game loop nang cao hon neu logic realtime phuc tap hon.
